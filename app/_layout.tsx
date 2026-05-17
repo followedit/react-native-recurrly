@@ -1,15 +1,16 @@
 import {SplashScreen, Stack, usePathname, useGlobalSearchParams} from "expo-router";
 import '@/global.css';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
 import {useFonts} from "expo-font";
 import {useEffect, useRef} from "react";
 import { ClerkProvider, useAuth } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
-import { PostHogProvider } from 'posthog-react-native';
-import { posthog } from '../src/config/posthog';
+import { PostHogProvider, PostHogErrorBoundary } from 'posthog-react-native';
+import { posthog } from '@/config/posthog';
+import {View, Text} from "react-native";
+
+export const unstable_settings = {
+  anchor: '(tabs)',
+};
 
 SplashScreen.preventAutoHideAsync();
 
@@ -24,9 +25,24 @@ function RootLayoutContent() {
   const pathname = usePathname();
   const params = useGlobalSearchParams();
   const previousPathname = useRef<string | undefined>(undefined);
+  const entryTime = useRef<number>(Date.now());
 
   useEffect(() => {
     if (previousPathname.current !== pathname) {
+      const now = Date.now();
+
+      // Capture $pageleave for the previous screen if it exists
+      if (previousPathname.current) {
+        const duration = Math.floor((now - entryTime.current) / 1000);
+        posthog.capture('$pageleave', {
+          screen_name: previousPathname.current,
+          duration: duration,
+        });
+      }
+
+      // Reset entry time for the new screen
+      entryTime.current = now;
+
       // Filter route params to avoid leaking sensitive data
       const sanitizedParams = Object.keys(params).reduce((acc, key) => {
         // Only include specific safe params
@@ -40,6 +56,13 @@ function RootLayoutContent() {
         previous_screen: previousPathname.current ?? null,
         ...sanitizedParams,
       });
+
+      // Capture $pageview to satisfy dashboard completion requirements (often expected by PostHog web dashboards)
+      posthog.capture('$pageview', {
+        screen_name: pathname,
+        ...sanitizedParams,
+      });
+
       previousPathname.current = pathname;
     }
   }, [pathname, params]);
@@ -72,6 +95,15 @@ function RootLayoutContent() {
   );
 }
 
+function PostHogFallbackComponent({ error }: { error: Error }) {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+      <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Something went wrong</Text>
+      <Text style={{ color: 'red', textAlign: 'center' }}>{error?.message || 'An unexpected error occurred'}</Text>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   return (
     <PostHogProvider
@@ -82,9 +114,11 @@ export default function RootLayout() {
         propsToCapture: ['testID'],
       }}
     >
-      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-        <RootLayoutContent />
-      </ClerkProvider>
+      <PostHogErrorBoundary fallback={PostHogFallbackComponent}>
+        <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+          <RootLayoutContent />
+        </ClerkProvider>
+      </PostHogErrorBoundary>
     </PostHogProvider>
   );
 }

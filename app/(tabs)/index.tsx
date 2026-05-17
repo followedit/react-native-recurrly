@@ -15,11 +15,13 @@ import {useState, useMemo} from "react";
 import { useUser } from '@clerk/expo';
 import { usePostHog } from 'posthog-react-native';
 import { useSubscriptionStore } from "@/lib/subscriptionStore";
+import { useScrollTracker } from "@/hooks/useScrollTracker";
 const SafeAreaView = styled(RNSafeAreaView);
 
 export default function App() {
     const { user } = useUser();
     const posthog = usePostHog();
+    const { onScroll } = useScrollTracker('Home');
     const [expandedSubscriptionId, setExpandedSubscriptionId] = useState<string | null>(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const { subscriptions, addSubscription } = useSubscriptionStore();
@@ -71,7 +73,10 @@ export default function App() {
                                     <Text className="home-user-name">{displayName}</Text>
                                 </View>
 
-                                <Pressable onPress={() => setIsModalVisible(true)}>
+                                <Pressable onPress={() => {
+                                    setIsModalVisible(true);
+                                    posthog.capture('subscription_modal_opened');
+                                }}>
                                     <Image source={icons.add} className="home-add-icon" />
                                 </Pressable>
                             </View>
@@ -116,6 +121,8 @@ export default function App() {
                     )}
                     extraData={expandedSubscriptionId}
                     ItemSeparatorComponent={() => <View className="h-4" />}
+                    onScroll={onScroll}
+                    scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={<Text className="home-empty-state">No subscriptions yet.</Text>}
                     contentContainerClassName="pb-30"

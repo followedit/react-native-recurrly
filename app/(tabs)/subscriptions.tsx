@@ -1,9 +1,11 @@
 import {Text, View, TextInput, FlatList} from 'react-native'
 import {SafeAreaView as RNSafeAreaView} from "react-native-safe-area-context";
 import { styled } from "nativewind";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import SubscriptionCard from "@/components/SubscriptionCard";
 import { useSubscriptionStore } from "@/lib/subscriptionStore";
+import { usePostHog } from 'posthog-react-native';
+import { useScrollTracker } from "@/hooks/useScrollTracker";
 
 const SafeAreaView = styled(RNSafeAreaView);
 
@@ -11,12 +13,32 @@ const Subscriptions = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const { subscriptions } = useSubscriptionStore();
+    const posthog = usePostHog();
+    const { onScroll } = useScrollTracker('Subscriptions');
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const filteredSubscriptions = subscriptions.filter((subscription) =>
         subscription.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         subscription.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         subscription.plan?.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const handleSearchChange = (query: string) => {
+        setSearchQuery(query);
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        if (query.trim()) {
+            searchDebounceRef.current = setTimeout(() => {
+                posthog.capture('subscription_searched', {
+                    query_length: query.trim().length,
+                    results_count: subscriptions.filter((s) =>
+                        s.name.toLowerCase().includes(query.toLowerCase()) ||
+                        s.category?.toLowerCase().includes(query.toLowerCase()) ||
+                        s.plan?.toLowerCase().includes(query.toLowerCase())
+                    ).length,
+                });
+            }, 500);
+        }
+    };
 
     return (
         <SafeAreaView className="flex-1 bg-background">
@@ -31,7 +53,7 @@ const Subscriptions = () => {
                             placeholder="Search subscriptions..."
                             placeholderTextColor="#666"
                             value={searchQuery}
-                            onChangeText={setSearchQuery}
+                            onChangeText={handleSearchChange}
                         />
                     </View>
                 }
@@ -43,6 +65,8 @@ const Subscriptions = () => {
                     />
                 )}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 12 }}
+                onScroll={onScroll}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="on-drag"

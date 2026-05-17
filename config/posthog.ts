@@ -20,6 +20,7 @@ export const posthog = new PostHog(apiKey || 'placeholder_key', {
   ...(host ? { host } : {}),
   disabled: !isPostHogConfigured,
   captureAppLifecycleEvents: true,
+  enableSessionReplay: true,
   debug: __DEV__,
   flushAt: 20,
   flushInterval: 10000,
